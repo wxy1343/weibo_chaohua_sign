@@ -1,5 +1,8 @@
+import random
 import re
 import requests
+from bs4 import BeautifulSoup
+
 from config import Config
 
 
@@ -109,6 +112,68 @@ def sign(gsid):
         print('签到完毕，共签到成功%d个' % s)
 
 
+def vip_sign(gsid):
+    url = 'https://new.vip.weibo.cn/aj/task/qiandao?task_id=1&F=growth_yhzx_didao'
+    cookies = {'SUB': gsid}
+    headers = {
+        'Referer': 'https://new.vip.weibo.cn'}
+    req = requests.Session()
+    r = req.get(url, headers=headers, cookies=cookies)
+    print(r.json()['msg'])
+
+
+def vip_pk(gsid):
+    req = requests.Session()
+    url = 'https://new.vip.weibo.cn/task/pk?from_pk=1&task_id=66'
+    cookies = {'SUB': gsid}
+    headers = {
+        'Referer': 'https://new.vip.weibo.cn'}
+
+    # 获取pk对象
+    r = req.get(url, headers=headers, cookies=cookies)
+    soup = BeautifulSoup(r.text, 'html.parser')
+    card = []
+    for i in soup.find_all('div', class_='card line-around card10'):
+        name = i.text.strip()
+        action = i['action-data']
+        card.append({'name': name, 'action': action})
+
+    # 随机选择一个pk
+    name = random.choice(card)['name']
+    action = random.choice(card)['action']
+    print('正在pk：' + name)
+
+    # 获取pk结果
+    url = f'https://new.vip.weibo.cn/pk?uid={action}&task_id=66&from=from_task_pk'
+    r = req.get(url, headers=headers, cookies=cookies)
+    soup = BeautifulSoup(r.text, 'html.parser')
+    try:
+        isWin1 = re.findall('value="(.*)" id="isWin1"', r.text)[0] != ''
+        isWin2 = re.findall('value="(.*)" id="isWin2"', r.text)[0] != ''
+    except:
+        print(r.json()['msg'])
+        return False
+    if isWin1 and not isWin2:
+        # 胜利
+        win = 1
+        flag = 1
+    elif not isWin1 and isWin2:
+        # 失败
+        win = 3
+        flag = 0
+    else:
+        # 平局
+        win = 2
+        flag = 3
+    for i, j in enumerate(soup.find_all('div', class_='PK_layerbase'), 1):
+        if i == win:
+            print(j.find('header').text.strip())
+    url = f'https://new.vip.weibo.cn/aj/pklog'
+    data = {'duid': action, 'flag': flag, 'F': ''}
+    r = req.post(url, headers=headers, cookies=cookies, data=data)
+    print(r.json()['msg'])
+
+
 if __name__ == '__main__':
     cf = Config('config.ini', '配置')
     gsid = cf.GetStr('配置', 'gsid')
@@ -120,4 +185,6 @@ if __name__ == '__main__':
         cf.Add('超话签到', 'name', name)
     print('用户名：' + name)
     print('gsid：' + gsid)
+    vip_sign(gsid)
+    vip_pk(gsid)
     sign(gsid)
