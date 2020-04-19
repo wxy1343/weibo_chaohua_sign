@@ -181,8 +181,8 @@ if __name__ == '__main__':
     if gsid == '':
         name, gsid = login()
         print('登录成功')
-        cf.Add('超话签到', 'gsid', gsid)
-        cf.Add('超话签到', 'name', name)
+        cf.Add('配置', 'gsid', gsid)
+        cf.Add('配置', 'name', name)
     print('用户名：' + name)
     print('gsid：' + gsid)
     vip_sign(gsid)
