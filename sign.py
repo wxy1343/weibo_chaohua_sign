@@ -1,9 +1,11 @@
-import random
 import re
 import requests
-from bs4 import BeautifulSoup
-
+from threading import Lock
+from multiprocessing.dummy import Pool
 from config import Config
+
+lock = Lock()
+pool = Pool(100)
 
 
 def login():
@@ -30,17 +32,17 @@ def login():
     return name, gsid
 
 
-def sign(gsid):
+def get_sign_list():
+    cookies = {'SUB': gsid}
     info_list = []
     since_id = ''
-    url = f'http://api.weibo.cn/2/cardlist?c=android&s=68998320&from=10A3295010&gsid={gsid}&containerid=100803_-_followsuper'
-    req = requests.Session()
     s = 0
     while True:
-        url = url + '&since_id=' + since_id
+        url = 'https://m.weibo.cn/api/container/getIndex?containerid=100803_-_followsuper&since_id=' + since_id
         # 获取超话列表
-        response = req.get(url)
-        card_group = response.json()['cards'][0]['card_group']
+        r = requests.get(url, cookies=cookies)
+        print(r.json())
+        card_group = r.json()['data']['cards'][0]['card_group']
         for i in range(len(card_group)):
             if card_group[i]['card_type'] == '8':
                 info = {}
@@ -72,7 +74,7 @@ def sign(gsid):
                 info_list.append(info)
                 s += 1
         # 获取下一页id
-        since_id = response.json()['cardlistInfo']['since_id']
+        since_id = r.json()['data']['cardlistInfo']['since_id']
         # 获取到空就是爬取完了
         if since_id == '':
             break
@@ -81,97 +83,41 @@ def sign(gsid):
     print('*' * 50)
     print('爬取完毕共%d个超话' % s)
     print('*' * 50)
-    s = 0
-    for i, info in enumerate(info_list):
-        i += 1
-        if info['sign_info'] == '未签到':
-            print(f"正在签到第{i}个\"{info['title_sub']}\" 等级LV.{info['lv']}")
-
-            # 打开超话
-            r = req.get(
-                url=f'https://api.weibo.cn/2/page?c=android&s=68998320&from=10A3295010&gsid={gsid}&containerid=' + info[
-                    'containerid'])
-
-            # 签到
-            r = req.get(url='https://api.weibo.cn' + r.json()['pageInfo']['right_button']['params'][
-                'action'] + f'&c=android&s=68998320&ua=HUAWEI-HUAWEI%20MLA-AL10__weibo__10.3.2__android__android5.1.1&v_p=82&from=10A3295010&gsid={gsid}&cum=AAAAAAAA')
-
-            # 获取签到信息
-            request_url = r.json()['scheme'].split('?')[1]
-            r = req.get(
-                f'https://api.weibo.cn/2/page/panel?c=android&s=68998320&from=10A3295010&gsid={gsid}&cum=AAAAAAAA&' + request_url)
-            s += 1
-
-            # 打印签到信息
-            print(''.join(re.findall('<.*?>(.*?)</.*?>', r.json()['panel_list'][2]['text'])))
-            print(''.join(re.findall('<.*?>(.*?)</.*?>', r.json()['panel_list'][3]['text'])))
-            print('*' * 50)
-    if s == 0:
-        print('今天你已经全部签到')
-    else:
-        print('签到完毕，共签到成功%d个' % s)
+    return info_list
 
 
-def vip_sign(gsid):
-    url = 'https://new.vip.weibo.cn/aj/task/qiandao?task_id=1&F=growth_yhzx_didao'
-    cookies = {'SUB': gsid}
-    headers = {
-        'Referer': 'https://new.vip.weibo.cn'}
-    req = requests.Session()
-    r = req.get(url, headers=headers, cookies=cookies)
-    print(r.json()['msg'])
+def sign(infos):
+    global s
+    i, info = infos
+    if info['sign_info'] == '未签到':
+        while True:
+            try:
+                # 打开超话
+                r = requests.get(
+                    url=f'https://api.weibo.cn/2/page?c=android&s=68998320&from=10A3295010&gsid={gsid}&containerid=' +
+                        info[
+                            'containerid'])
 
+                # 签到
+                r = requests.get(url='https://api.weibo.cn' + r.json()['pageInfo']['right_button']['params'][
+                    'action'] + f'&c=android&s=68998320&ua=HUAWEI-HUAWEI%20MLA-AL10__weibo__10.3.2__android__android5.1.1&v_p=82&from=10A3295010&gsid={gsid}&cum=AAAAAAAA')
 
-def vip_pk(gsid):
-    req = requests.Session()
-    url = 'https://new.vip.weibo.cn/task/pk?from_pk=1&task_id=66'
-    cookies = {'SUB': gsid}
-    headers = {
-        'Referer': 'https://new.vip.weibo.cn'}
+                # 获取签到信息
+                request_url = r.json()['scheme'].split('?')[1]
+                r = requests.get(
+                    f'https://api.weibo.cn/2/page/panel?c=android&s=68998320&from=10A3295010&gsid={gsid}&cum=AAAAAAAA&' + request_url)
+                s += 1
 
-    # 获取pk对象
-    r = req.get(url, headers=headers, cookies=cookies)
-    soup = BeautifulSoup(r.text, 'html.parser')
-    card = []
-    for i in soup.find_all('div', class_='card line-around card10'):
-        name = i.text.strip()
-        action = i['action-data']
-        card.append({'name': name, 'action': action})
-
-    # 随机选择一个pk
-    name = random.choice(card)['name']
-    action = random.choice(card)['action']
-    print('正在pk：' + name)
-
-    # 获取pk结果
-    url = f'https://new.vip.weibo.cn/pk?uid={action}&task_id=66&from=from_task_pk'
-    r = req.get(url, headers=headers, cookies=cookies)
-    soup = BeautifulSoup(r.text, 'html.parser')
-    try:
-        isWin1 = re.findall('value="(.*)" id="isWin1"', r.text)[0] != ''
-        isWin2 = re.findall('value="(.*)" id="isWin2"', r.text)[0] != ''
-    except:
-        print(r.json()['msg'])
-        return False
-    if isWin1 and not isWin2:
-        # 胜利
-        win = 1
-        flag = 1
-    elif not isWin1 and isWin2:
-        # 失败
-        win = 3
-        flag = 0
-    else:
-        # 平局
-        win = 2
-        flag = 3
-    for i, j in enumerate(soup.find_all('div', class_='PK_layerbase'), 1):
-        if i == win:
-            print(j.find('header').text.strip())
-    url = f'https://new.vip.weibo.cn/aj/pklog'
-    data = {'duid': action, 'flag': flag, 'F': ''}
-    r = req.post(url, headers=headers, cookies=cookies, data=data)
-    print(r.json()['msg'])
+                # 打印签到信息
+                with lock:
+                    print('*' * 50)
+                    print(f"正在签到第{i}个\"{info['title_sub']}\" 等级LV.{info['lv']}")
+                    print(''.join(re.findall('<.*?>(.*?)</.*?>', r.json()['panel_list'][2]['text'])))
+                    print(''.join(re.findall('<.*?>(.*?)</.*?>', r.json()['panel_list'][3]['text'])))
+            except:
+                pass
+            else:
+                break
 
 
 if __name__ == '__main__':
@@ -185,6 +131,10 @@ if __name__ == '__main__':
         cf.Add('配置', 'name', name)
     print('用户名：' + name)
     print('gsid：' + gsid)
-    vip_sign(gsid)
-    vip_pk(gsid)
-    sign(gsid)
+    info_list = get_sign_list()
+    s = 0
+    pool.map(sign, enumerate(info_list))
+    if s == 0:
+        print('今天你已经全部签到')
+    else:
+        print('签到完毕，共签到成功%d个' % s)
