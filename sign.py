@@ -41,7 +41,6 @@ def get_sign_list():
         url = 'https://m.weibo.cn/api/container/getIndex?containerid=100803_-_followsuper&since_id=' + since_id
         # 获取超话列表
         r = requests.get(url, cookies=cookies)
-        print(r.json())
         card_group = r.json()['data']['cards'][0]['card_group']
         for i in range(len(card_group)):
             if card_group[i]['card_type'] == '8':
@@ -133,7 +132,8 @@ if __name__ == '__main__':
     print('gsid：' + gsid)
     info_list = get_sign_list()
     s = 0
-    pool.map(sign, enumerate(info_list))
+    pool.map(sign, list(enumerate(info_list))[:8])
+    pool.map(sign, list(enumerate(info_list))[8:])
     if s == 0:
         print('今天你已经全部签到')
     else:
