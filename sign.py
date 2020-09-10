@@ -1,35 +1,12 @@
 import re
+import sys
+import time
 import requests
-from threading import Lock
-from multiprocessing.dummy import Pool
 from config import Config
+from multiprocessing.dummy import Pool
 
-lock = Lock()
+cf = Config('config.ini', '配置')
 pool = Pool(100)
-
-
-def login():
-    url = 'https://api.weibo.cn/2/account/login_sendcode'
-    phone = input('请输入手机号：')
-    data = {'phone': phone}
-    response = requests.post(url=url, data=data)
-    try:
-        print(response.json()['msg'])
-    except:
-        print(response.json()['errmsg'])
-        exit()
-    url = 'https://api.weibo.cn/2/account/login'
-    while True:
-        smscode = input('请输入验证码：')
-        data['smscode'] = smscode
-        response = requests.post(url=url, data=data)
-        if 'errmsg' in response.json():
-            print(response.json()['errmsg'])
-            continue
-        name = response.json()['screen_name']
-        gsid = response.json()['gsid']
-        break
-    return name, gsid
 
 
 def get_sign_list():
@@ -41,6 +18,21 @@ def get_sign_list():
         url = 'https://m.weibo.cn/api/container/getIndex?containerid=100803_-_followsuper&since_id=' + since_id
         # 获取超话列表
         r = requests.get(url, cookies=cookies)
+        if r.json()['ok'] != 1:
+            try:
+                errno = r.json()['errno']
+            except:
+                continue
+            if errno == '100005':
+                print(r.json()['msg'])
+                n = 600
+                while n + 1:
+                    time.sleep(1)
+                    sys.stdout.write(f'\r等待时间：{n}秒')
+                    n -= 1
+                continue
+        c = cookies
+        c.update(r.cookies.get_dict())
         card_group = r.json()['data']['cards'][0]['card_group']
         for i in range(len(card_group)):
             if card_group[i]['card_type'] == '8':
@@ -60,11 +52,16 @@ def get_sign_list():
                 containerid = card_group[i]['scheme'].split('&')[0].split('=')[1]
                 if sign_info == '签到':
                     sign_info = '未签到'
+                sign_url = card_group[i]['buttons'][0]['scheme']
+                if sign_url:
+                    sign_url = 'https://m.weibo.cn' + card_group[i]['buttons'][0]['scheme']
                 info['title_sub'] = title_sub
                 info['lv'] = int(re.findall('\d+', lv)[0])
                 info['desc'] = desc
                 info['sign_info'] = sign_info
                 info['containerid'] = containerid
+                info['sign_url'] = sign_url
+                info['cookies'] = c
                 print(title_sub)
                 print(lv)
                 if desc != '':
@@ -78,63 +75,87 @@ def get_sign_list():
         if since_id == '':
             break
     # 按等级从大到小排序超话
-    info_list.sort(key=lambda keys: keys['lv'], reverse=True)
+    info_list.sort(key=lambda keys: keys['lv'])
     print('*' * 50)
     print('爬取完毕共%d个超话' % s)
     print('*' * 50)
     return info_list
 
 
-def sign(infos):
-    global s
-    i, info = infos
+def sign(args):
+    global success_sign
+    global fail_sign
+    global already_sign
+    global fail
+    i, info = args
     if info['sign_info'] == '未签到':
+        title_sub = info['title_sub']
+        sign_url = info['sign_url']
+        cookies = info['cookies']
+        lv = info['lv']
+        n = 1
         while True:
             try:
-                # 打开超话
-                r = requests.get(
-                    url=f'https://api.weibo.cn/2/page?c=android&s=68998320&from=10A3295010&gsid={gsid}&containerid=' +
-                        info[
-                            'containerid'])
-
-                # 签到
-                r = requests.get(url='https://api.weibo.cn' + r.json()['pageInfo']['right_button']['params'][
-                    'action'] + f'&c=android&s=68998320&ua=HUAWEI-HUAWEI%20MLA-AL10__weibo__10.3.2__android__android5.1.1&v_p=82&from=10A3295010&gsid={gsid}&cum=AAAAAAAA')
-
-                # 获取签到信息
-                request_url = r.json()['scheme'].split('?')[1]
-                r = requests.get(
-                    f'https://api.weibo.cn/2/page/panel?c=android&s=68998320&from=10A3295010&gsid={gsid}&cum=AAAAAAAA&' + request_url)
-                s += 1
-
-                # 打印签到信息
-                with lock:
-                    print('*' * 50)
-                    print(f"正在签到第{i}个\"{info['title_sub']}\" 等级LV.{info['lv']}")
-                    print(''.join(re.findall('<.*?>(.*?)</.*?>', r.json()['panel_list'][2]['text'])))
-                    print(''.join(re.findall('<.*?>(.*?)</.*?>', r.json()['panel_list'][3]['text'])))
+                r = requests.post(sign_url, cookies=cookies, headers={
+                    'Referer': 'https://m.weibo.cn',
+                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/85.0.4183.83 Safari/537.36'},
+                                  timeout=3)
+                if r.status_code == 200:
+                    break
+                else:
+                    raise Exception
             except:
-                pass
-            else:
-                break
+                if n >= 16:
+                    fail = True
+                    return False
+                n *= 2
+                time.sleep(1)
+        if r.json()['ok'] == 1:
+            print(f'第{i}个签到成功："{title_sub}" 等级LV.{lv}')
+            success_sign += 1
+        else:
+            print(f'第{i}个签到失败："{title_sub}" 等级LV.{lv}')
+            fail_sign += 1
+    else:
+        already_sign += 1
+
+
+def get_gsid():
+    gsid = cf.GetStr('配置', 'gsid')
+    if gsid == '':
+        print('请前往"https://m.weibo.cn"获取gsid')
+        gsid = input('请输入你的gsid：')
+    return gsid
+
+
+def start_sign():
+    global success_sign
+    global fail_sign
+    global already_sign
+    global fail
+    fail = False
+    info_list = get_sign_list()
+    while True:
+        success_sign = 0
+        fail_sign = 0
+        already_sign = 0
+        pool.map(sign, list(enumerate(info_list))[:8])
+        pool.map(sign, list(enumerate(info_list))[8:])
+        if fail:
+            n = 600
+            while n + 1:
+                time.sleep(1)
+                sys.stdout.write(f'\r等待时间：{n}秒')
+                n -= 1
+            fail = False
+            continue
+        break
+    if success_sign + already_sign == len(info_list):
+        print('今天你已经全部签到')
+    else:
+        print(f'签到完毕，共签到成功{success_sign}个，签到失败{fail_sign}个')
 
 
 if __name__ == '__main__':
-    cf = Config('config.ini', '配置')
-    gsid = cf.GetStr('配置', 'gsid')
-    name = cf.GetStr('配置', 'name')
-    if gsid == '':
-        name, gsid = login()
-        print('登录成功')
-        cf.Add('配置', 'gsid', gsid)
-        cf.Add('配置', 'name', name)
-    print('用户名：' + name)
-    print('gsid：' + gsid)
-    info_list = get_sign_list()
-    s = 0
-    pool.map(sign, list(enumerate(info_list))[:8])
-    pool.map(sign, list(enumerate(info_list))[8:])
-    if s == 0:
-        print('今天你已经全部签到')
-    else:
-        print('签到完毕，共签到成功%d个' % s)
+    gsid = get_gsid()
+    start_sign()
