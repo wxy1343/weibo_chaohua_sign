@@ -75,7 +75,7 @@ def get_sign_list():
         if since_id == '':
             break
     # 按等级从大到小排序超话
-    info_list.sort(key=lambda keys: keys['lv'])
+    info_list.sort(key=lambda keys: keys['lv'], reverse=True)
     print('*' * 50)
     print('爬取完毕共%d个超话' % s)
     print('*' * 50)
