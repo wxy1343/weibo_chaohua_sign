@@ -33,42 +33,44 @@ def get_sign_list():
                 continue
         c = cookies
         c.update(r.cookies.get_dict())
-        card_group = r.json()['data']['cards'][0]['card_group']
-        for i in range(len(card_group)):
-            if card_group[i]['card_type'] == '8':
-                info = {}
-                print('*' * 50)
-                # 超话名
-                title_sub = card_group[i]['title_sub']
-                # 超话等级
-                lv = card_group[i]['desc1']
-                # 超话信息
-                desc = card_group[i]['desc2'].strip()
-                # 去掉多余换行符
-                desc = '\n'.join([i for i in desc.split('\n') if i != ''])
-                # 超话签到信息
-                sign_info = card_group[i]['buttons'][0]['name']
-                # 超话id
-                containerid = card_group[i]['scheme'].split('&')[0].split('=')[1]
-                if sign_info == '签到':
-                    sign_info = '未签到'
-                sign_url = card_group[i]['buttons'][0]['scheme']
-                if sign_url:
-                    sign_url = 'https://m.weibo.cn' + card_group[i]['buttons'][0]['scheme']
-                info['title_sub'] = title_sub
-                info['lv'] = int(re.findall('\d+', lv)[0])
-                info['desc'] = desc
-                info['sign_info'] = sign_info
-                info['containerid'] = containerid
-                info['sign_url'] = sign_url
-                info['cookies'] = c
-                print(title_sub)
-                print(lv)
-                if desc != '':
-                    print(desc)
-                print(sign_info)
-                info_list.append(info)
-                s += 1
+        cards = r.json()['data']['cards']
+        for i in range(len(cards)):
+            card_group = cards[i]['card_group']
+            for j in range(len(card_group)):
+                if card_group[j]['card_type'] == '8':
+                    info = {}
+                    print('*' * 50)
+                    # 超话名
+                    title_sub = card_group[j]['title_sub']
+                    # 超话等级
+                    lv = card_group[j]['desc1']
+                    # 超话信息
+                    desc = card_group[j]['desc2'].strip()
+                    # 去掉多余换行符
+                    desc = '\n'.join([i for i in desc.split('\n') if i != ''])
+                    # 超话签到信息
+                    sign_info = card_group[j]['buttons'][0]['name']
+                    # 超话id
+                    containerid = card_group[j]['scheme'].split('&')[0].split('=')[1]
+                    if sign_info == '签到':
+                        sign_info = '未签到'
+                    sign_url = card_group[j]['buttons'][0]['scheme']
+                    if sign_url:
+                        sign_url = 'https://m.weibo.cn' + card_group[j]['buttons'][0]['scheme']
+                    info['title_sub'] = title_sub
+                    info['lv'] = int(re.findall('\d+', lv)[0])
+                    info['desc'] = desc
+                    info['sign_info'] = sign_info
+                    info['containerid'] = containerid
+                    info['sign_url'] = sign_url
+                    info['cookies'] = c
+                    print(title_sub)
+                    print(lv)
+                    if desc != '':
+                        print(desc)
+                    print(sign_info)
+                    info_list.append(info)
+                    s += 1
         # 获取下一页id
         since_id = r.json()['data']['cardlistInfo']['since_id']
         # 获取到空就是爬取完了
@@ -139,8 +141,14 @@ def start_sign():
         success_sign = 0
         fail_sign = 0
         already_sign = 0
-        pool.map(sign, list(enumerate(info_list))[:8])
-        pool.map(sign, list(enumerate(info_list))[8:])
+        lv_gte_12 = [i for i in info_list if i['lv'] >= 12]
+        lv_gte_9 = [i for i in info_list if 9 <= i['lv'] < 12]
+        lv_gte_5 = [i for i in info_list if 5 <= i['lv'] < 9]
+        lv_lt_5 = [i for i in info_list if i['lv'] < 5]
+        pool.map(sign, list(enumerate(lv_gte_12)))
+        pool.map(sign, list(enumerate(lv_gte_9)))
+        pool.map(sign, list(enumerate(lv_gte_5)))
+        pool.map(sign, list(enumerate(lv_lt_5)))
         if fail:
             n = 600
             while n + 1:
