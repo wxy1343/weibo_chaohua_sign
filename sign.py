@@ -35,6 +35,9 @@ def get_sign_list():
         c.update(r.cookies.get_dict())
         cards = r.json()['data']['cards']
         for i in range(len(cards)):
+            card_type = cards[i]['card_type']
+            if card_type != '11':
+                continue
             card_group = cards[i]['card_group']
             for j in range(len(card_group)):
                 if card_group[j]['card_type'] == '8':
